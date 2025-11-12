@@ -1,0 +1,64 @@
+{
+  "name": "liquid-validator",
+  "displayName": "Liquid Validator (JSON/XML)",
+  "description": "Validates Liquid templates by test-rendering scenarios to ensure valid JSON or XML output.",
+  "version": "0.1.0",
+  "publisher": "LoiCao2705",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Testing"
+  ],
+  "icon": "images/icon.png", 
+  "repository": { 
+    "type": "git",
+    "url": "https://github.com/Thanhloi-lab/liquid_validator.git"
+  },
+  "activationEvents": [
+    "onCommand:liquidJsonCheck.validate",
+    "onLanguage:liquid"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "liquidJsonCheck.validate",
+        "title": "Liquid: Validate JSON/XML Output"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceLangId == liquid",
+          "command": "liquidJsonCheck.validate",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^4.4.0",
+    "liquidjs": "^10.16.0"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.80.0",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "@typescript-eslint/eslint-plugin": "^7.11.0",
+    "@typescript-eslint/parser": "^7.11.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.5",
+    "@vscode/test-electron": "^2.3.9"
+  }
+}
