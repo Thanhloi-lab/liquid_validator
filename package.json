@@ -12,32 +12,23 @@
     "Programming Languages",
     "Testing"
   ],
-  "icon": "images/icon.png", 
-  "repository": { 
+  "icon": "images/icon.png",
+  "repository": {
     "type": "git",
-    "url": "https://github.com/Thanhloi-lab/liquid_validator.git"
+    "url": "https://github.com/Thanhloi-lab/liquid_validator"
   },
   "activationEvents": [
-    "onCommand:liquidJsonCheck.validate",
+    "onCommand:liquidCheck.validate",
     "onLanguage:liquid"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "liquidJsonCheck.validate",
+        "command": "liquidCheck.validate",
         "title": "Liquid: Validate JSON/XML Output"
       }
-    ],
-    "menus": {
-      "editor/context": [
-        {
-          "when": "resourceLangId == liquid",
-          "command": "liquidJsonCheck.validate",
-          "group": "navigation"
-        }
-      ]
-    }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
@@ -45,7 +36,8 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js"
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package"
   },
   "dependencies": {
     "fast-xml-parser": "^4.4.0",

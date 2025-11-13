@@ -2,12 +2,12 @@ import * as vscode from "vscode";
 import { Liquid } from "liquidjs";
 import * as fs from "fs";
 import * as path from "path";
-import { XMLParser } from "fast-xml-parser"; // <- THÊM: Hỗ trợ XML
+import { XMLParser } from "fast-xml-parser"; // Added for XML support
 
 const engine = new Liquid();
-const xmlParser = new XMLParser(); // <- THÊM: Khởi tạo 1 lần
+const xmlParser = new XMLParser(); // Initialize parser once
 
-// --- CÁC HÀM HELPER (Tương tự file TS cũ) ---
+// --- HELPER FUNCTIONS ---
 
 function isQuoted(varName: string, template: string): boolean {
   const re = new RegExp(`["']\\s*{{\\s*${varName}\\s*}}\\s*["']`);
@@ -100,21 +100,21 @@ function ctxForOrCondition(base: any, orConds: Cond[]): any {
 }
 
 /**
- * THÊM: Hàm xác thực (validate) tập trung
- * Ném ra lỗi nếu nội dung render không hợp lệ.
+ * Centralized validation function.
+ * Throws an error if the rendered content is invalid.
  */
 function validateOutput(renderedText: string, formatType: "json" | "xml") {
   if (formatType === "json") {
-    JSON.parse(renderedText); // Sẽ ném ra lỗi nếu JSON không hợp lệ
+    JSON.parse(renderedText); // Will throw if invalid JSON
   } else if (formatType === "xml") {
-    xmlParser.parse(renderedText); // Sẽ ném ra lỗi nếu XML không hợp lệ
+    xmlParser.parse(renderedText); // Will throw if invalid XML
   }
 }
 
 async function generateScenariosAndBadFiles(
   templateStr: string,
   docPath: string,
-  formatType: "json" | "xml" // <- THAY ĐỔI: Nhận định dạng
+  formatType: "json" | "xml"
 ) {
   // collect vars
   const varRe = /{{\s*([a-zA-Z0-9_\.]+)\s*}}/g;
@@ -143,7 +143,7 @@ async function generateScenariosAndBadFiles(
     ["base", JSON.parse(JSON.stringify(baseCtx))],
   ];
 
-  // --- Logic tạo Scenario (như cũ) ---
+  // --- Scenario Generation Logic (unchanged) ---
   let ifMatch;
   while ((ifMatch = ifBlockRe.exec(templateStr)) !== null) {
     const firstCond = ifMatch[1].trim();
@@ -189,16 +189,15 @@ async function generateScenariosAndBadFiles(
     }
   }
 
-  // --- Logic thư mục Output (ĐÃ CẬP NHẬT) ---
+  // --- Output Directory Logic (Updated) ---
   const docDir = path.dirname(docPath);
   const docName = path.basename(docPath, path.extname(docPath));
   const outDir = path.join(docDir, `${docName}_fails`);
-  const fileExtension = `.${formatType}`; // <- THAY ĐỔI: Dùng đuôi file động
+  const fileExtension = `.${formatType}`; // Dynamic file extension
 
-  // THAY ĐỔI: Xóa thư mục _fails cũ nếu tồn tại
+  // Remove old _fails directory if it exists
   if (fs.existsSync(outDir)) {
     fs.rmSync(outDir, { recursive: true, force: true });
-    console.log(`Đã xóa thư mục '${outDir}' cũ.`);
   }
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -210,48 +209,47 @@ async function generateScenariosAndBadFiles(
       const tpl = engine.parse(templateStr);
       rendered = await engine.render(tpl, ctx);
     } catch (e) {
-      // lỗi render => cũng là lỗi
+      // rendering error => treat as bad
       rendered = String(e);
     }
 
-    // THAY ĐỔI: Dùng hàm validateOutput mới
+    // Use new validateOutput function
     try {
       validateOutput(rendered, formatType);
       // ok
     } catch (e) {
       const safeName = name.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
-      // THAY ĐỔI: Dùng fileExtension động
+      // Use dynamic fileExtension
       const filePath = path.join(outDir, `${safeName}${fileExtension}`);
       fs.writeFileSync(filePath, rendered, "utf8");
       badFiles.push(filePath);
     }
   }
 
-  // Logic zip đã bị xóa, chỉ trả về outDir và badFiles
   return { outDir, badFiles };
 }
 
 export function activate(context: vscode.ExtensionContext) {
   const diagnosticCollection =
-    vscode.languages.createDiagnosticCollection("liquid-json-check");
+    vscode.languages.createDiagnosticCollection("liquid-check");
   context.subscriptions.push(diagnosticCollection);
 
   const disposable = vscode.commands.registerCommand(
-    "liquidJsonCheck.validate",
+    "liquidCheck.validate",
     async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showInformationMessage("Mở một file Liquid trước.");
+        vscode.window.showInformationMessage("Open a Liquid file first."); // Translated
         return;
       }
 
-      // THAY ĐỔI: Hỏi người dùng định dạng
+      // Ask user for format
       const formatType = (await vscode.window.showQuickPick(["json", "xml"], {
-        placeHolder: "Chọn định dạng để xác thực",
+        placeHolder: "Select the format to validate", // Translated
       })) as "json" | "xml" | undefined;
 
       if (!formatType) {
-        // Người dùng đã hủy
+        // User cancelled
         return;
       }
 
@@ -262,13 +260,13 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: `Đang xác thực Liquid ${formatType.toUpperCase()}...`,
+          title: `Validating Liquid ${formatType.toUpperCase()}...`, // Translated
           cancellable: false,
         },
         async (p) => {
-          p.report({ message: "Đang tạo các kịch bản..." });
+          p.report({ message: "Generating scenarios..." }); // Translated
           try {
-            // THAY ĐỔI: Truyền formatType vào
+            // Pass formatType
             const { outDir, badFiles } = await generateScenariosAndBadFiles(
               text,
               docPath,
@@ -279,48 +277,49 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (badFiles.length === 0) {
               vscode.window.showInformationMessage(
-                // THAY ĐỔI: Hiển thị thông báo động
-                `Tất cả kịch bản đều tạo ra ${formatType.toUpperCase()} hợp lệ 🎉`
+                // Translated
+                `All scenarios produced valid ${formatType.toUpperCase()} 🎉`
               );
-              // THAY ĐỔI: Xóa thư mục _fails nếu không có lỗi
+              // Clean up _fails dir if no errors
               if (fs.existsSync(outDir)) {
                 fs.rmSync(outDir, { recursive: true, force: true });
               }
             } else {
               const diagnostics: vscode.Diagnostic[] = [];
-              const fileExtension = `.${formatType}`; // <- THAY ĐỔI
+              const fileExtension = `.${formatType}`;
 
               for (let i = 0; i < badFiles.length; i++) {
                 const file = badFiles[i];
-                // THAY ĐỔI: Dùng fileExtension động
                 const name = path.basename(file, fileExtension);
                 const range = new vscode.Range(0, 0, 0, 1);
                 const diag = new vscode.Diagnostic(
                   range,
-                  // THAY ĐỔI: Hiển thị thông báo động
-                  `Kịch bản ${name} tạo ra ${formatType.toUpperCase()} không hợp lệ. Xem ${file}`,
+                  // Translated
+                  `Scenario ${name} produced invalid ${formatType.toUpperCase()}. See ${file}`,
                   vscode.DiagnosticSeverity.Error
                 );
                 diagnostics.push(diag);
               }
               diagnosticCollection.set(doc.uri, diagnostics);
 
-              const open = "Mở thư mục lỗi";
+              const open = "Open Failures Folder"; // Translated
               const res = await vscode.window.showErrorMessage(
-                `${badFiles.length} kịch bản lỗi. Xem thư mục: ${outDir}`,
+                // Translated
+                `${badFiles.length} failing scenarios. See folder: ${outDir}`,
                 open
               );
               if (res === open) {
                 const uri = vscode.Uri.file(outDir);
-                // Mở thư mục trong VS Code
+                // Open folder in a new window
                 vscode.commands.executeCommand("vscode.openFolder", uri, {
-                  forceNewWindow: true, // Mở cửa sổ mới để không làm phiền cửa sổ hiện tại
+                  forceNewWindow: true,
                 });
               }
             }
           } catch (err: any) {
             vscode.window.showErrorMessage(
-              "Lỗi khi xác thực Liquid: " + String(err)
+              // Translated
+              "Error validating Liquid: " + String(err)
             );
           }
         }
@@ -333,15 +332,11 @@ export function activate(context: vscode.ExtensionContext) {
   // optional: validate on save
   vscode.workspace.onDidSaveTextDocument((doc) => {
     if (doc.languageId === "liquid" || doc.fileName.endsWith(".liquid")) {
-      vscode.commands.executeCommand("liquidJsonCheck.validate");
+      vscode.commands.executeCommand("liquidCheck.validate");
     }
   });
 }
 
-export function deactivate() {
-  // Xóa diagnostics khi tắt
-  const diagnosticCollection =
-    vscode.languages.createDiagnosticCollection("liquid-json-check");
-  diagnosticCollection.clear();
-  diagnosticCollection.dispose();
-}
+// VS Code handles disposal of 'diagnosticCollection'
+// because we pushed it to context.subscriptions.
+export function deactivate() {}
