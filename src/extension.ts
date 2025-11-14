@@ -2,14 +2,44 @@ import * as vscode from "vscode";
 import { Liquid } from "liquidjs";
 import * as fs from "fs";
 import * as path from "path";
-import { XMLParser } from "fast-xml-parser"; // Added for XML support
+import { XMLParser } from "fast-xml-parser";
 
 const engine = new Liquid();
-const xmlParser = new XMLParser(); // Initialize parser once
+const xmlParser = new XMLParser();
 
 // --- HELPER FUNCTIONS ---
 
+/**
+ * NEW: Deeply sets a value in an object based on a path string.
+ * Handles paths like "a.b", "a[0].c", or "a.b[0][1].d".
+ */
+function setDeep(obj: any, pathStr: string, value: any) {
+  // Convert "a.b[0].c" into ["a", "b", "0", "c"]
+  const path = pathStr.replace(/\[/g, ".").replace(/\]/g, "").split(".").filter(Boolean);
+
+  let current = obj;
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+
+    if (current[key] === undefined || current[key] === null) {
+      // Look ahead to see if the next key is a number
+      const nextKey = path[i + 1];
+      if (!isNaN(Number(nextKey))) {
+        current[key] = []; // It's an array
+      } else {
+        current[key] = {}; // It's an object
+      }
+    }
+    current = current[key];
+  }
+
+  // Set the final value
+  current[path[path.length - 1]] = value;
+  return obj;
+}
+
 function isQuoted(varName: string, template: string): boolean {
+  // This regex can remain simple, it just checks for quotes *around* the variable
   const re = new RegExp(`["']\\s*{{\\s*${varName}\\s*}}\\s*["']`);
   return re.test(template);
 }
@@ -32,8 +62,10 @@ function parseOrCondition(condText: string): Cond[] {
   const parts = condText.split(" or ").map((s) => s.trim());
   const conds: Cond[] = [];
   for (const p of parts) {
-    const m = p.match(/^([a-zA-Z0-9_\.]+)\s*(==|!=)\s*(.+)$/);
+    // UPDATED REGEX: Allow [ and ] in the variable name
+    const m = p.match(/^([a-zA-Z0-9_\.\[\]'"]+)\s*(==|!=)\s*(.+)$/);
     if (!m) {
+      // Simple truthy check, e.g., {% if variable %}
       conds.push([p.trim(), null, null]);
     } else {
       let [, v, op, rhsRaw] = m;
@@ -65,28 +97,34 @@ function ctxForSimpleCondition(
     (typeof rhs === "string" && (rhs as string).toLowerCase() === "null");
 
   if (!op) {
-    ctx[variable] = wantTrue ? 1 : "null";
+    // {% if variable %}
+    // UPDATED: Use setDeep to set the value
+    setDeep(ctx, variable, wantTrue ? 1 : "null");
     return ctx;
   }
 
   if (op === "==") {
     if (wantTrue) {
-      ctx[variable] = rhsIsNull ? "null" : rhs;
+      setDeep(ctx, variable, rhsIsNull ? "null" : rhs);
     } else {
-      if (rhsIsNull) ctx[variable] = "1";
-      else if (typeof rhs === "number") ctx[variable] = rhs + 1;
-      else ctx[variable] = String(rhs) + "_diff";
+      let failValue: any;
+      if (rhsIsNull) failValue = "1";
+      else if (typeof rhs === "number") failValue = rhs + 1;
+      else failValue = String(rhs) + "_diff";
+      setDeep(ctx, variable, failValue);
     }
     return ctx;
   }
 
   if (op === "!=") {
     if (wantTrue) {
-      if (rhsIsNull) ctx[variable] = "1";
-      else if (typeof rhs === "number") ctx[variable] = rhs + 1;
-      else ctx[variable] = String(rhs) + "_diff";
+      let successValue: any;
+      if (rhsIsNull) successValue = "1";
+      else if (typeof rhs === "number") successValue = rhs + 1;
+      else successValue = String(rhs) + "_diff";
+      setDeep(ctx, variable, successValue);
     } else {
-      ctx[variable] = rhsIsNull ? "null" : rhs;
+      setDeep(ctx, variable, rhsIsNull ? "null" : rhs);
     }
     return ctx;
   }
@@ -99,15 +137,11 @@ function ctxForOrCondition(base: any, orConds: Cond[]): any {
   return ctxForSimpleCondition(base, v, op, rhs, true);
 }
 
-/**
- * Centralized validation function.
- * Throws an error if the rendered content is invalid.
- */
 function validateOutput(renderedText: string, formatType: "json" | "xml") {
   if (formatType === "json") {
-    JSON.parse(renderedText); // Will throw if invalid JSON
+    JSON.parse(renderedText);
   } else if (formatType === "xml") {
-    xmlParser.parse(renderedText); // Will throw if invalid XML
+    xmlParser.parse(renderedText);
   }
 }
 
@@ -117,17 +151,22 @@ async function generateScenariosAndBadFiles(
   formatType: "json" | "xml"
 ) {
   // collect vars
-  const varRe = /{{\s*([a-zA-Z0-9_\.]+)\s*}}/g;
+  // UPDATED REGEX: Allow [ and ] to find paths like request[0].name
+  const varRe = /{{\s*([a-zA-Z0-9_\.\[\]'"]+)\s*}}/g;
   const allVars = new Set<string>();
   let mm;
   while ((mm = varRe.exec(templateStr)) !== null) {
-    allVars.add(mm[1]);
+    // Avoid capturing filters or other liquid logic
+    if (mm[1] && !mm[1].includes("|")) {
+      allVars.add(mm[1]);
+    }
   }
 
   const baseCtx: any = {};
   for (const v of allVars) {
-    if (isQuoted(v, templateStr)) baseCtx[v] = randomString();
-    else baseCtx[v] = randomUnquoted();
+    const value = isQuoted(v, templateStr) ? randomString() : randomUnquoted();
+    // UPDATED: Use setDeep to build a nested context
+    setDeep(baseCtx, v, value);
   }
 
   // find if blocks
@@ -135,21 +174,24 @@ async function generateScenariosAndBadFiles(
   const elsifRe = /{%\s*elsif\s+(.+?)\s*%}/g;
 
   // case/when
+  // UPDATED REGEX: Allow [ and ] in case variable
   const caseRe =
-    /{%\s*case\s+([a-zA-Z0-9_\.]+)\s*%}([\s\S]*?){%\s*endcase\s*%}/g;
+    /{%\s*case\s+([a-zA-Z0-9_\.\[\]'"]+)\s*%}([\s\S]*?){%\s*endcase\s*%}/g;
   const whenRe = /{%\s*when\s+([^%]+?)\s*%}/g;
 
   const scenarios: Array<[string, any]> = [
     ["base", JSON.parse(JSON.stringify(baseCtx))],
   ];
 
-  // --- Scenario Generation Logic (unchanged) ---
+  // --- Scenario Generation Logic ---
   let ifMatch;
   while ((ifMatch = ifBlockRe.exec(templateStr)) !== null) {
     const firstCond = ifMatch[1].trim();
     const body = ifMatch[2];
 
     const orConds = parseOrCondition(firstCond);
+    if (orConds.length === 0) continue; // Skip if parsing failed
+
     const ctxIf = ctxForOrCondition(baseCtx, orConds);
     scenarios.push([`if_${firstCond}`, ctxIf]);
 
@@ -157,10 +199,12 @@ async function generateScenariosAndBadFiles(
     for (const em of elsifs) {
       const elsifCond = (em as any)[1].trim();
       const oc = parseOrCondition(elsifCond);
+      if (oc.length === 0) continue;
       const ctxElsif = ctxForOrCondition(baseCtx, oc);
       scenarios.push([`elsif_${elsifCond}`, ctxElsif]);
     }
 
+    // else: make all false
     let ctxElse = JSON.parse(JSON.stringify(baseCtx));
     for (const [v, op, rhs] of orConds) {
       ctxElse = ctxForSimpleCondition(ctxElse, v, op, rhs, false);
@@ -168,6 +212,7 @@ async function generateScenariosAndBadFiles(
     for (const em of elsifs) {
       const elsifCond = (em as any)[1].trim();
       const oc = parseOrCondition(elsifCond);
+      if (oc.length === 0) continue;
       for (const [v, op, rhs] of oc) {
         ctxElse = ctxForSimpleCondition(ctxElse, v, op, rhs, false);
       }
@@ -183,19 +228,20 @@ async function generateScenariosAndBadFiles(
     for (const w of whens) {
       let val: any = (w as any)[1].trim().replace(/^['"]|['"]$/g, "");
       if (!Number.isNaN(Number(val))) val = Number(val);
+      
       const ctx = JSON.parse(JSON.stringify(baseCtx));
-      ctx[caseVar] = val;
+      // UPDATED: Use setDeep to set the case variable
+      setDeep(ctx, caseVar, val);
       scenarios.push([`case_${caseVar}_${val}`, ctx]);
     }
   }
 
-  // --- Output Directory Logic (Updated) ---
+  // --- Output Directory Logic ---
   const docDir = path.dirname(docPath);
   const docName = path.basename(docPath, path.extname(docPath));
   const outDir = path.join(docDir, `${docName}_fails`);
-  const fileExtension = `.${formatType}`; // Dynamic file extension
+  const fileExtension = `.${formatType}`;
 
-  // Remove old _fails directory if it exists
   if (fs.existsSync(outDir)) {
     fs.rmSync(outDir, { recursive: true, force: true });
   }
@@ -209,17 +255,13 @@ async function generateScenariosAndBadFiles(
       const tpl = engine.parse(templateStr);
       rendered = await engine.render(tpl, ctx);
     } catch (e) {
-      // rendering error => treat as bad
       rendered = String(e);
     }
 
-    // Use new validateOutput function
     try {
       validateOutput(rendered, formatType);
-      // ok
     } catch (e) {
       const safeName = name.replace(/[^a-zA-Z0-9_\-\.]/g, "_");
-      // Use dynamic fileExtension
       const filePath = path.join(outDir, `${safeName}${fileExtension}`);
       fs.writeFileSync(filePath, rendered, "utf8");
       badFiles.push(filePath);
@@ -228,6 +270,9 @@ async function generateScenariosAndBadFiles(
 
   return { outDir, badFiles };
 }
+
+// --- activate and deactivate functions (no changes needed) ---
+// (The main logic for activation, UI, and progress remains the same)
 
 export function activate(context: vscode.ExtensionContext) {
   const diagnosticCollection =
@@ -239,17 +284,15 @@ export function activate(context: vscode.ExtensionContext) {
     async () => {
       const editor = vscode.window.activeTextEditor;
       if (!editor) {
-        vscode.window.showInformationMessage("Open a Liquid file first."); // Translated
+        vscode.window.showInformationMessage("Open a Liquid file first.");
         return;
       }
 
-      // Ask user for format
       const formatType = (await vscode.window.showQuickPick(["json", "xml"], {
-        placeHolder: "Select the format to validate", // Translated
+        placeHolder: "Select the format to validate",
       })) as "json" | "xml" | undefined;
 
       if (!formatType) {
-        // User cancelled
         return;
       }
 
@@ -260,13 +303,12 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
-          title: `Validating Liquid ${formatType.toUpperCase()}...`, // Translated
+          title: `Validating Liquid ${formatType.toUpperCase()}...`,
           cancellable: false,
         },
         async (p) => {
-          p.report({ message: "Generating scenarios..." }); // Translated
+          p.report({ message: "Generating scenarios..." });
           try {
-            // Pass formatType
             const { outDir, badFiles } = await generateScenariosAndBadFiles(
               text,
               docPath,
@@ -277,10 +319,8 @@ export function activate(context: vscode.ExtensionContext) {
 
             if (badFiles.length === 0) {
               vscode.window.showInformationMessage(
-                // Translated
                 `All scenarios produced valid ${formatType.toUpperCase()} 🎉`
               );
-              // Clean up _fails dir if no errors
               if (fs.existsSync(outDir)) {
                 fs.rmSync(outDir, { recursive: true, force: true });
               }
@@ -294,7 +334,6 @@ export function activate(context: vscode.ExtensionContext) {
                 const range = new vscode.Range(0, 0, 0, 1);
                 const diag = new vscode.Diagnostic(
                   range,
-                  // Translated
                   `Scenario ${name} produced invalid ${formatType.toUpperCase()}. See ${file}`,
                   vscode.DiagnosticSeverity.Error
                 );
@@ -302,15 +341,13 @@ export function activate(context: vscode.ExtensionContext) {
               }
               diagnosticCollection.set(doc.uri, diagnostics);
 
-              const open = "Open Failures Folder"; // Translated
+              const open = "Open Failures Folder";
               const res = await vscode.window.showErrorMessage(
-                // Translated
                 `${badFiles.length} failing scenarios. See folder: ${outDir}`,
                 open
               );
               if (res === open) {
                 const uri = vscode.Uri.file(outDir);
-                // Open folder in a new window
                 vscode.commands.executeCommand("vscode.openFolder", uri, {
                   forceNewWindow: true,
                 });
@@ -318,7 +355,6 @@ export function activate(context: vscode.ExtensionContext) {
             }
           } catch (err: any) {
             vscode.window.showErrorMessage(
-              // Translated
               "Error validating Liquid: " + String(err)
             );
           }
@@ -337,6 +373,4 @@ export function activate(context: vscode.ExtensionContext) {
   });
 }
 
-// VS Code handles disposal of 'diagnosticCollection'
-// because we pushed it to context.subscriptions.
 export function deactivate() {}

@@ -2,7 +2,7 @@
   "name": "liquid-validator",
   "displayName": "Liquid Validator (JSON/XML)",
   "description": "Validates Liquid templates by test-rendering scenarios to ensure valid JSON or XML output.",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "publisher": "LoiCao2705",
   "engines": {
     "vscode": "^1.80.0"
@@ -15,7 +15,7 @@
   "icon": "images/icon.png",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Thanhloi-lab/liquid_validator"
+    "url": "https://github.com/Thanhloi-lab/liquid_validator.git"
   },
   "activationEvents": [
     "onCommand:liquidCheck.validate",
@@ -28,6 +28,43 @@
         "command": "liquidCheck.validate",
         "title": "Liquid: Validate JSON/XML Output"
       }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "resourceLangId == liquid",
+          "command": "liquidCheck.validate",
+          "group": "navigation"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "liquid",
+        "aliases": [
+          "Liquid",
+          "liquid"
+        ],
+        "extensions": [
+          ".liquid"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "liquid",
+        "scopeName": "text.html.liquid",
+        "path": "./syntaxes/liquid.tmLanguage.json",
+        "embeddedLanguages": {
+          "text.html": "html",
+          "text.xml": "xml",
+          "meta.embedded.sql": "sql",
+          "source.css": "css",
+          "source.js": "javascript",
+          "source.json": "json"
+        }
+      }
     ]
   },
   "scripts": {
@@ -36,8 +73,7 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src --ext ts",
-    "test": "node ./out/test/runTest.js",
-    "package": "vsce package"
+    "test": "node ./out/test/runTest.js"
   },
   "dependencies": {
     "fast-xml-parser": "^4.4.0",

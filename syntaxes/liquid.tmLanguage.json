@@ -1,0 +1,208 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.schema.json",
+  "name": "Liquid",
+  "scopeName": "text.html.liquid",
+  "fileTypes": [".liquid"],
+  "patterns": [
+    {
+      "comment": "QUY TẮC 1: Luôn luôn tìm các thẻ Liquid trước tiên.",
+      "include": "#liquid-tags"
+    },
+    {
+      "comment": "QUY TẮC 2: Luôn luôn tìm các biến Liquid trước tiên.",
+      "include": "#liquid-variables"
+    },
+    {
+      "comment": "QUY TẮC 3: CÁC BLOCK NỘI DUNG",
+      "patterns": [
+        {
+          "comment": "BLOCK JSON: Nếu file bắt đầu bằng { hoặc [",
+          "begin": "^\\s*([{\\[])",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.object.begin.json" }
+          },
+          "end": "(?=a)b",
+          "name": "meta.json.liquid",
+          "patterns": [
+            { "include": "#liquid-tags" },
+            { "include": "#liquid-variables" },
+            { "include": "#json-content" }
+          ]
+        },
+        {
+          "comment": "BLOCK XML: Nếu file bắt đầu bằng <",
+          "begin": "^\\s*(<)",
+          "beginCaptures": {
+            "1": { "name": "punctuation.definition.tag.xml" }
+          },
+          "end": "(?=a)b",
+          "name": "meta.xml.liquid",
+          "patterns": [
+            { "include": "#liquid-tags" },
+            { "include": "#liquid-variables" },
+            { "include": "text.xml" }
+          ]
+        },
+        {
+          "comment": "BLOCK HTML: (Fallback) Nếu không phải 2 cái trên",
+          "end": "(?=a)b",
+          "name": "meta.html.liquid",
+          "patterns": [
+            { "include": "#liquid-tags" },
+            { "include": "#liquid-variables" },
+            { "include": "text.html.basic" }
+          ]
+        }
+      ]
+    }
+  ],
+  "repository": {
+    "liquid-tags": {
+      "comment": "Liquid Tags: {% ... %}",
+      "begin": "({%)([-~]?)",
+      "beginCaptures": {
+        "1": {
+          "comment": "Dấu {% và %} được gán 'entity.name.tag' (MÀU TÍM)",
+          "name": "entity.name.tag.liquid"
+        },
+        "2": { "name": "punctuation.whitespace.liquid" }
+      },
+      "end": "([-~]?)(%})",
+      "endCaptures": {
+        "1": { "name": "punctuation.whitespace.liquid" },
+        "2": { "name": "entity.name.tag.liquid" }
+      },
+      "name": "meta.tag.liquid",
+      "patterns": [
+        {
+          "comment": "Keywords (if, else, for...)",
+          "match": "\\b(if|else|elsif|endif|unless|endunless|case|when|endcase|for|endfor|break|continue|cycle|in|by|limit|offset|reversed|capture|endcapture|increment|decrement|assign|include|render|layout|section|schema|form|endform|tablerow|endtablerow|paginate|endpaginate|raw|endraw|comment|endcomment|liquid)\\b",
+          "name": "keyword.control.liquid"
+        },
+        {
+          "comment": "Operators (and, or, ==...)",
+          "match": "\\b(and|or|not|contains|==|!=|<=|>=|<|>)\\b",
+          "name": "keyword.operator.liquid"
+        },
+        {
+          "comment": "Constants (true, false, null...)",
+          "match": "\\b(true|false|nil|null|empty|blank)\\b",
+          "name": "constant.language.liquid"
+        },
+        { "include": "#strings" },
+        {
+          "comment": "Numbers",
+          "match": "\\b[0-9]+(\\.[0-9]+)?\\b",
+          "name": "constant.numeric.liquid"
+        },
+        {
+          "comment": "Biến và thuộc tính trong thẻ (MÀU XANH LÁ)",
+          "match": "(\\.)([a-zA-Z_][a-zA-Z0-9_]*)|(\\[)('[^']+'|\"[^\"]+\"|\\d+)(\\])",
+          "captures": {
+            "1": { "name": "punctuation.accessor.liquid" },
+            "2": { "name": "variable.parameter.liquid" },
+            "3": { "name": "punctuation.section.bracket.begin.liquid" },
+            "4D": { "name": "string.quoted.single.liquid" },
+            "5": { "name": "punctuation.section.bracket.end.liquid" }
+          }
+        },
+        {
+          "comment": "Biến cơ sở trong thẻ (MÀU XANH LÁ)",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b",
+          "name": "variable.parameter.liquid"
+        }
+      ]
+    },
+    "liquid-variables": {
+      "comment": "Liquid Variables: {{ ... }}",
+      "begin": "({{)([-~]?)",
+      "beginCaptures": {
+        "1": {
+          "comment": "Dấu {{ và }} được gán 'constant.numeric' (MÀU CAM)",
+          "name": "constant.numeric.liquid"
+        },
+        "2": { "name": "punctuation.whitespace.liquid" }
+      },
+      "end": "([-~]?)(}})",
+      "endCaptures": {
+        "1": { "name": "punctuation.whitespace.liquid" },
+        "2": { "name": "constant.numeric.liquid" }
+      },
+      "name": "meta.variable.liquid",
+      "patterns": [
+        { "include": "#strings" },
+        {
+          "comment": "Biến và thuộc tính trong output (MÀU CAM)",
+          "match": "(\\.)([a-zA-Z_][a-zA-Z0-9_]*)|(\\[)('[^']+'|\"[^\"]+\"|\\d+)(\\])",
+          "captures": {
+            "1": { "name": "punctuation.accessor.liquid" },
+            "2": { "name": "constant.numeric.liquid" },
+            "3": { "name": "punctuation.section.bracket.begin.liquid" },
+            "4D": { "name": "string.quoted.single.liquid" },
+            "5": { "name": "punctuation.section.bracket.end.liquid" }
+          }
+        },
+        {
+          "comment": "Biến cơ sở trong output (MÀU CAM)",
+          "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b",
+          "name": "constant.numeric.liquid"
+        }
+      ]
+    },
+    "json-content": {
+      "comment": "Các quy tắc chỉ dành cho JSON",
+      "patterns": [
+        {
+          "comment": "JSON Keys (Màu xanh)",
+          "match": "(\")([a-zA-Z0-9_\\.]+)(\")(\\s*):",
+          "captures": {
+            "1": { "name": "punctuation.definition.string.begin.json" },
+            "2": { "name": "support.type.property-name.json" },
+            "3": { "name": "punctuation.definition.string.end.json" },
+            "4": { "name": "punctuation.separator.key-value.json" }
+          }
+        },
+        {
+          "comment": "JSON String Values (Màu xanh lá)",
+          "include": "#strings"
+        },
+        {
+          "comment": "JSON Constants (Màu cam)",
+          "match": "\\b(true|false|null)\\b",
+          "name": "constant.language.json"
+        },
+        {
+          "comment": "JSON Numbers (Màu cam)",
+          "match": "(?<![a-zA-Z])(-?[0-9]+(\\.[0-9]+)?)",
+          "name": "constant.numeric.json"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.liquid",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.liquid",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.single.liquid",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.liquid",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
